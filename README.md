@@ -1,16 +1,21 @@
 # 🎨 dali 🎨
-a ffmpeg tui frontend based on [**`tui-base`**](https://github.com/mofeimw/tui)
+a ffmpeg tui frontend built on top of [**`tui-base`**](https://github.com/mofeimw/tui)
+
+## operations
+- overlay images
+- add subtitles
+- optimize/re-encode h.264
 
 ## why?
-because davinci resolve is overkill for these simple tasks
+- because davinci resolve is overkill for these simple tasks
 
-and it was a fun project
+- it was a fun project
 
 ## dependencies
-- `ffmpeg`
 - `bash`
+- `ffmpeg`
           
 ## usage
 ```
 dali
-```             
+``` 
