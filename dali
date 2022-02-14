@@ -123,8 +123,10 @@ next() {
     # set the next function
     next=${queue[1]}
 
+    # pop the previous call from queue
     remove "${queue[0]}"
 
+    # run ffmpeg command if queue is empty
     [ ${#queue[@]} -eq 0 ] && {
         complete=true
         return 0
@@ -322,13 +324,17 @@ keystroke() {
 }
 
 # video editing
+# proxy function to image overlay
 image() {
+    # create a file picker and forward to overlay()
     reset
     exts=("png" "jpg" "jpeg")
     browser overlay
 }
 
+# proxy <select> to image overlay
 img() {
+    # create <select> to get user's next operation
     reset
     body=("select <image> to continue overlaying or done to move on to next operation")
     choice "image"
@@ -336,12 +342,20 @@ img() {
     render
 }
 
+# create ffmpeg filtergraph chain to overlay
 overlay() {
+    # reset terminal and turn on icanon and echo mode
     reset
     stty icanon echo
+    
+    printf '\033[1m\033[34m%s\033[m\n' "<$file>"
+    echo
 
+    # get start time
     printf '\033[1m\033[34m%s\033[m\n' 'start time (hh:mm:ss/mm:ss, blank for full video): '
     read start
+
+    # if it is not blank (full video) convert to seconds
     [ ! -z "$start" ] && {
         start=$(seconds $start)
         [ $? -eq 1 ] && {
@@ -352,6 +366,7 @@ overlay() {
         }
     }
 
+    # get end time if full video overlay is not desired and convert to seconds
     [ ! -z "$start" ] && {
         printf '\n\033[1m\033[34m%s\033[m\n' 'end time (hh:mm:ss/mm:ss): '
         read end
@@ -363,28 +378,38 @@ overlay() {
             exit 1
         }
 
+        # create filtergraph parameter
         between=":enable='between(t,${start},${end})'"
     } || between=""
 
-    [ $n -ge 1 ] && {
+    # change number of pads and add a semicolon on the second passthrough (when n=1)
+    [ $n -eq 1 ] && {
         filters+=";"
         pads=[0][1]
     }
 
+    # create temp variable z to set the correct pad #
     ((z = n + 1))
+
+    # set the filtergraph chain depending on the n value
     [ $n -eq 0 ] && filters="${filters}overlay=x=0:y=0${between}[out]" || filters="${filters}[out][$z]overlay=x=0:y=0${between}[out];"
 
+    # increment n - next passthrough on overlay
     ((n++))
 
+    # turn icanon and echo back off, tui mode
     stty -icanon -echo
 
+    # add input and flags into input chain
     inputs+=" -i $file"
 
+    # go to next section
     queue image
     queue img
     next
 }
 
+# proxy function for subtitle file picker
 subtitle() {
     reset
 
@@ -392,40 +417,56 @@ subtitle() {
     browser sub
 }
 
+# adds on to filtergraph chain with the selected subtitle file
 sub() {
     reset
 
-    [ ! -z "$filters" ] && filters+=";"
-    filters+="ass=$file"
+    # remove the [out] or [out]; from the end of the chain to allow adding on the chain
+    [ "$n" -eq 1 ] && rgx='^(.+)\[out\]$' || rgx='^(.+)\[out\];$'
+    if [[ "$filters" =~ $rgx ]]; then
+        filters="${BASH_REMATCH[1]}"
+    fi
+
+    # append to chain
+    [ ! -z "$filters" ] && filters+=",ass=$file[out]" || filters+="ass=$file[out]"
 
     next
 }
 
+# optimize/reencode withe video in h.264 to reduce file size
 optimize() {
     reset
     body=("$video optimization")
     render
     stty icanon echo
 
+    # ask for crf value
     printf '\033[1m\033[34m%s\033[m' 'enter crf value (default is 23): '
     read crf
 
+    # default to 23 if it is not an integer value or too high
     if [[ -z "$crf" ]] || [[ ! "$crf" =~ [0-9]+ ]]; then
         crf=23
     elif [[ $crf -gt 50 ]]; then
         crf=23
     fi
 
-
-    opt=" -vcodec libx264 -crf $crf"
+    # set variable with contents
+    optimize=" -vcodec libx264 -crf $crf"
 
     stty -icanon -echo
     next
 }
 
+# <select> for video operations
 ops() {
+    # set the video variable to the video file selected in previous stage
     video="$file"
+
+    # set the inputs flag, will be added on to later
     inputs=" -i $file"
+
+    # set up the tui
     reset
     body=("select (an) operation(s)")
     choice "image" "subtitle" "optimize"
@@ -433,6 +474,7 @@ ops() {
     render
 }
 
+# convert to seconds from hh:mm:ss or mm:ss
 seconds() {
     # use first argument
     time=$1
@@ -470,24 +512,43 @@ seconds() {
     echo $seconds
 }
 
+# run the ffmpeg command
 run() {
+    # reset and display the ffmpeg command
     reset
-    [ -z "$filters" ] && body=("running: ffmpeg -y$inputs$opt .$video") || body=("running: ffmpeg -y$inputs -filter_complex \"$pads$filters\" -map [out] -map 0:a?$crf .$video")
+    [ -z "$filters" ] && body=("running: ffmpeg -y$inputs$optimize $video") || body=("running: ffmpeg -y$inputs -filter_complex $pads$filters -map [out] -map 0:a?$optimize $video")
     render
 
-    [ $n -ne 1 ] && filters=${filters%?}
+    # remove the trailing semicolon
+    rgx='^(.+);$'
+    if [[ "$filters" =~ $rgx ]]; then
+        filters="${BASH_REMATCH[1]}"
+    fi
 
-    [ -z "$filters" ] && ffmpeg -y$inputs$opt ".dali_$video" 2> log || {
-        echo "ffmpeg -y$inputs -filter_complex $pads$filters -map [out] -map 0:a?$crf .$video" > cmd
-        ffmpeg -y$inputs -filter_complex "$pads$filters" -map [out] -map 0:a?$crf ".dali_$video" 2> log
-    }
+    # run ffmpeg command, outputting log to log.txt
+    [ -z "$filters" ] && ffmpeg -y$inputs$optimize ".dali_$video" 2> log.txt || ffmpeg -y$inputs -filter_complex "$pads$filters" -map [out] -map 0:a?$optimize ".dali_$video" 2> log.txt
 
-    mv "$video" ".old_$video"
+    # move files into place
+    mv "$video" ".dali/$video"
     mv ".dali_$video" "$video"
+
+    # display completion message
+    reset
+    body+=("done!")
+    body+=(" ")
+    body+=("press enter to exit")
+    render
+
+    # wait for keypress
+    read wait
 }
 
 # main() function
 main() {
+    # create .dali directory if it doesn't already exist
+    [ ! -d ".dali" ] && mkdir ".dali"
+
+    # get terminal dimensions
     read -r LINES COLUMNS < <(stty size)
 
     # hide input and read keys one at a time
@@ -497,7 +558,7 @@ main() {
     trap 'refresh' WINCH
     trap "stty icanon echo; printf '\033[?25h\033[2J\033[H'; exit 1" EXIT INT
 
-    # init variables
+    # init tui variables
     selectable=()
     selected=()
     queue=("home")
@@ -507,18 +568,21 @@ main() {
     video=""
     exts=()
 
+    # init ffmpeg variables
     n=0
     inputs=""
     pads=[0]
     filters=""
+    optimize=""
 
     # push <p> to the <body>
     body=("welcome to dali resolve")
     
+    # make a file browser to select video file to work with
     exts=("mp4" "mkv" "mov")
     browser ops
     
-    # render!
+    # render to terminal!
     render
 
     # forever loop reading keys
@@ -529,6 +593,7 @@ main() {
         }
     done
 
+    # run ffmpeg command once the loop is broken
     [ "$complete" == true ] && {
         run
     }
