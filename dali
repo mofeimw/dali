@@ -21,15 +21,17 @@ render() {
         fi
     done
 
+    [ -z "$slabel" ] && slabel="done"
+
     # render submit button based on state
-    [ "$submit" == visible ] && {
-        for ((i=0; i<$COLUMNS; i++)); { echo -n " "; }
-        printf '\033[1m\033[46m\033[30mdone\033[m\n'
+    [ "$submit" == "visible" ] && {
+        for ((i=0; i<COLUMNS; i++)); { echo -n " "; }
+        printf '\033[1m\033[46m\033[30m%s\033[m\n' "$slabel"
     }
 
-    [ "$submit" == selected ] && {
-        for ((i=0; i<$COLUMNS; i++)); { echo -n " "; }
-        printf '\033[1m\033[41m\033[30mdone\033[m\n'
+    [ "$submit" == "selected" ] && {
+        for ((i=0; i<COLUMNS; i++)); { echo -n " "; }
+        printf '\033[1m\033[41m\033[30m%s\033[m\n' "$slabel"
     }
 }
 
@@ -45,10 +47,10 @@ refresh() {
 # hard reset
 reset() {
     body=()
-    submit=""
     selectable=()
     selected=()
-
+    submit=""
+    slabel=""
     cursor=0
 
     refresh
@@ -70,16 +72,16 @@ header() {
 
     # write to stdout, with top and bottom padding
     printf '\033[1m\033[44m\033[30m%s\033[m' "$out"
-    for ((i=0; i<$COLUMNS; i++)); { echo -n " "; }
+    for ((i=0; i<COLUMNS; i++)); { echo -n " "; }
 }
 
 # render all in <body>
 body() {
     for p in "${body[@]}"; do
         printf '\033[1m\033[34m%s\033[m' "$p"
-        for ((i=0; i<$COLUMNS-${#p}; i++)); { echo -n " "; }
+        for ((i=0; i<COLUMNS-${#p}; i++)); { echo -n " "; }
     done
-    for ((i=0; i<$COLUMNS; i++)); { echo -n " "; }
+    for ((i=0; i<COLUMNS; i++)); { echo -n " "; }
 }
 
 # construct a <select>
@@ -94,7 +96,7 @@ choice() {
 # file browser
 browser() {
     msg="please select a file ("
-    for e in "${exts[@]}"; do msg+="$e, "; done
+    for e in "${exts[@]}"; do msg+=".$e, "; done
     body+=("${msg:0:-2})")
     queue "$1"
 
@@ -115,7 +117,7 @@ browser() {
     choice $opts
 
     # set the type to filesystem mode
-    submit=fs
+    submit="fs"
 }
 
 # allow chainable function calls
@@ -129,10 +131,7 @@ next() {
     # run ffmpeg command if queue is empty
     [ ${#queue[@]} -eq 0 ] && {
         complete=true
-        return 0
-    }
-
-    $next
+    } || $next
 }
 
 # remove the first (current) index in queue
@@ -156,7 +155,7 @@ queue() { queue=("${queue[@]:0:1}" "$1" "${queue[@]:1}"); }
 # submit button
 submit() {
     # on_submit handler in file browser mode
-    [ "$submit" == fs ] && {
+    [ "$submit" == "fs" ] && {
         # reset and forward to next function in queue
         reset
         next
@@ -192,10 +191,10 @@ submit() {
 # "click" event handler
 click() {
     # call submit() to send data
-    [ "$submit" == selected ] && { submit; return 0; }
+    [ "$submit" == "selected" ] && { submit; return 0; }
 
     # in file browser mode immediately submit after one selection, saving the selected file
-    [ "$submit" == fs ] && {
+    [ "$submit" == "fs" ] && {
         file="${selectable[$cursor]}"
         submit
         return 0
@@ -216,7 +215,7 @@ click() {
             new=()
 
             for value in "${selected[@]}"; do
-                [ ! "$value" == "$item" ] && new+=($value)
+                [ ! "$value" == "$item" ] && new+=("$value")
             done
 
             selected=("${new[@]}")
@@ -237,12 +236,12 @@ curse() {
     # move selection away from submit button if it was already selected
     [ $submit == selected ] && {
         cursor=0
-        submit=visible
+        submit="visible"
     }
 
     # test submit button state
     [ $submit == visible ] && {
-        [ $cursor -eq ${#selectable[@]} ] && submit=selected
+        [ $cursor -eq ${#selectable[@]} ] && submit="selected"
     } || {
         [ $cursor -eq ${#selectable[@]} ] && cursor=0
     }
@@ -263,10 +262,6 @@ down() {
     curse
 }
 
-# do stuff with left and right keys
-left() { :; }
-right() { :; }
-
 # map keys
 keystroke() {
     # map escape codes
@@ -278,14 +273,6 @@ keystroke() {
 
             B)
                 down
-            ;;
-
-            D)
-                left
-            ;;
-
-            C) 
-                right
             ;;
         esac
 
@@ -305,14 +292,6 @@ keystroke() {
             down
         ;;
 
-        h)
-            left
-        ;;
-
-        l)
-            right
-        ;;
-
         " "|"")
             click
         ;;
@@ -328,6 +307,7 @@ keystroke() {
 image() {
     # create a file picker and forward to overlay()
     reset
+    body=("image overlay")
     exts=("png" "jpg" "jpeg")
     browser overlay
 }
@@ -336,9 +316,10 @@ image() {
 img() {
     # create <select> to get user's next operation
     reset
-    body=("select <image> to continue overlaying or done to move on to next operation")
+    body=("select <image> to continue overlaying or <next> to move on to next operation")
     choice "image"
-    submit=visible
+    submit="visible"
+    slabel="next"
     render
 }
 
@@ -412,6 +393,7 @@ overlay() {
 # proxy function for subtitle file picker
 subtitle() {
     reset
+    body=("subtitle")
 
     exts=("ass")
     browser sub
@@ -436,12 +418,12 @@ sub() {
 # optimize/reencode withe video in h.264 to reduce file size
 optimize() {
     reset
-    body=("$video optimization")
+    body=("h.264 encoding" "1-50 value, lower for higher resolution")
     render
     stty icanon echo
 
     # ask for crf value
-    printf '\033[1m\033[34m%s\033[m' 'enter crf value (default is 23): '
+    printf '\033[1m\033[34m%s\033[m\n' 'crf: '
     read crf
 
     # default to 23 if it is not an integer value or too high
@@ -470,7 +452,7 @@ ops() {
     reset
     body=("select (an) operation(s)")
     choice "image" "subtitle" "optimize"
-    submit=visible
+    submit="visible"
     render
 }
 
@@ -516,8 +498,12 @@ seconds() {
 run() {
     # reset and display the ffmpeg command
     reset
-    [ -z "$filters" ] && body=("running: ffmpeg -y$inputs$optimize $video") || body=("running: ffmpeg -y$inputs -filter_complex $pads$filters -map [out] -map 0:a?$optimize $video")
+    [ -z "$filters" ] && log="ffmpeg -y$inputs$optimize $video" || log="ffmpeg -y$inputs -filter_complex $pads$filters -map [out] -map 0:a?$optimize $video"
+    body=("$log")
     render
+
+    # record ffmpeg cmd
+    echo "$log" > log.txt
 
     # remove the trailing semicolon
     rgx='^(.+);$'
@@ -526,7 +512,7 @@ run() {
     fi
 
     # run ffmpeg command, outputting log to log.txt
-    [ -z "$filters" ] && ffmpeg -y$inputs$optimize ".dali_$video" 2> log.txt || ffmpeg -y$inputs -filter_complex "$pads$filters" -map [out] -map 0:a?$optimize ".dali_$video" 2> log.txt
+    [ -z "$filters" ] && ffmpeg -y$inputs$optimize ".dali_$video" 2>> log.txt || ffmpeg -y$inputs -filter_complex "$pads$filters" -map [out] -map 0:a?$optimize ".dali_$video" 2>> log.txt
 
     # move files into place
     mv "$video" ".dali/$video"
@@ -535,12 +521,10 @@ run() {
     # display completion message
     reset
     body+=("done!")
-    body+=(" ")
-    body+=("press enter to exit")
     render
 
-    # wait for keypress
-    read wait
+    # wait for keypress and exit
+    key=$(dd ibs=1 count=1 2>/dev/null)
 }
 
 # main() function
@@ -571,7 +555,7 @@ main() {
     # init ffmpeg variables
     n=0
     inputs=""
-    pads=[0]
+    pads="[0]"
     filters=""
     optimize=""
 
