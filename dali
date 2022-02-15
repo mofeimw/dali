@@ -95,9 +95,9 @@ choice() {
 
 # file browser
 browser() {
-    msg="please select a file ("
+    msg="select a file ("
     for e in "${exts[@]}"; do msg+=".$e, "; done
-    body+=("${msg:0:-2})")
+    body+=("${msg%??})")
     queue "$1"
 
     # init/reset variables
