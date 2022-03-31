@@ -1,7 +1,7 @@
 # 🎨 dali
 a ffmpeg based tui built on top of [**`tui-base`**](https://github.com/mofeimw/tui)
 
-<p align="center"><img src="screenshot.png" alt="screenshot" width="75%"></p>
+<p align="center"><img src="screenshot.png" alt="screenshot" width="80%"></p>
 
 ## operations
 - overlay images
